@@ -2,9 +2,11 @@
 core/alerter.py
 ───────────────
 Email alerter with duplicate suppression.
-Uses yunivolt.com SMTP credentials (SSL on port 465).
+Sends over SMTP with SSL (port 465 by default). Credentials come from
+environment variables or CLI flags, never from this file.
 """
 
+import os
 import smtplib
 import ssl
 import threading
@@ -17,12 +19,20 @@ from typing import Optional
 
 log = logging.getLogger("ids.alerter")
 
-# ── Default sender credentials ────────────────────────────────────────────────
-DEFAULT_SMTP_HOST = "mail.yunivolt.com"
-DEFAULT_RECIPIENT = "daviddracer@gmail.com"
-DEFAULT_SMTP_PORT = 465
-DEFAULT_SENDER    = "ids@yunivolt.com"
-DEFAULT_PASSWORD  = "Intrusion123!"   # set via --email-pass flag or env var
+# ── SMTP settings ─────────────────────────────────────────────────────────────
+# Nothing secret lives in this file. Set these as environment variables, or pass
+# the matching command-line flags (--email-to, --email-pass):
+#
+#   IDS_EMAIL_PASS   SMTP password for the sender account   (required to send)
+#   IDS_ALERT_TO     where alerts are delivered              (or use --email-to)
+#   IDS_SENDER       sender address / SMTP login
+#   IDS_SMTP_HOST    SMTP server (SSL)
+#   IDS_SMTP_PORT    SMTP SSL port, default 465
+DEFAULT_SMTP_HOST = os.environ.get("IDS_SMTP_HOST", "mail.example.com")
+DEFAULT_SMTP_PORT = int(os.environ.get("IDS_SMTP_PORT", "465"))
+DEFAULT_SENDER    = os.environ.get("IDS_SENDER", "ids@example.com")
+DEFAULT_RECIPIENT = os.environ.get("IDS_ALERT_TO", "")
+DEFAULT_PASSWORD  = os.environ.get("IDS_EMAIL_PASS", "")
 
 
 class EmailAlerter:
@@ -162,6 +172,12 @@ class EmailAlerter:
                 self._record_sent(src_ip)
                 self.sent_count += 1
             return True
+
+        if not self.password or not self.recipient:
+            missing = "password (IDS_EMAIL_PASS / --email-pass)" if not self.password \
+                      else "recipient (IDS_ALERT_TO / --email-to)"
+            log.error(f"Email not sent: no {missing} set.")
+            return False
 
         try:
             ctx = ssl.create_default_context()
